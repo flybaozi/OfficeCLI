@@ -95,10 +95,7 @@ internal static partial class ChartExBuilder
             AutoUpdate = false,
         });
 
-        // boxWhisker: native Excel structure is one cx:data per group (numDim only,
-        // no strDim) + one cx:series per group. The category axis positions each
-        // group automatically by series order. Any strDim causes Excel to stack
-        // all boxes onto the same X position.
+        // Each box group has literal labels and referenced numeric observations.
         var dataBlockCount = seriesData.Count;
         for (int si = 0; si < dataBlockCount; si++)
         {
@@ -860,13 +857,9 @@ internal static partial class ChartExBuilder
         // strDim provides the X-axis label for this group.
         // Repeat the group name once per data point (required: ptCount must equal numDim ptCount).
         var strDim = new CX.StringDimension { Type = CX.StringDimensionType.Cat };
-        // CONSISTENCY(chartex-sidecars): each cx:strDim/cx:numDim MUST start
-        // with a cx:f formula referencing the embedded xlsx, otherwise
-        // PowerPoint shows the chart as a blank placeholder. Each boxWhisker
-        // group lives in its own column (B,C,D,...) of the embedded sheet.
+        // The group labels are literal strings; the value column holds observations.
         int rowEnd = values.Length + 1;
         char colLetter = (char)('B' + id);
-        strDim.AppendChild(new CX.Formula($"Sheet1!${colLetter}$2:${colLetter}${rowEnd}"));
         var strLvl = new CX.StringLevel { PtCount = (uint)values.Length };
         for (int i = 0; i < values.Length; i++)
             strLvl.AppendChild(new CX.ChartStringValue(groupName) { Index = (uint)i });
