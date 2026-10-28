@@ -406,11 +406,11 @@ internal partial class ChartSvgRenderer
         // when the data has them, so negative bars get plot space and a zero
         // baseline can be drawn. dataMin is 0 for all-positive data (axis stays
         // anchored at the bottom/left exactly as before). Not applied to
-        // percent-stacked (fixed 0..100) or waterfall (cumulative running total).
+        // percent-stacked (fixed 0..100).
         // For stacked charts dataMin = the most-negative per-category stack sum.
         double dataMin = (!percentStacked && !stacked && !isWaterfall)
             ? Math.Min(0, allValues.Min())
-            : (stacked && !percentStacked && !isWaterfall ? stackedNegMin : 0);
+            : (stacked && !percentStacked ? stackedNegMin : 0);
 
         double niceMax, niceMin = 0, tickStep;
         int nTicks;
@@ -859,14 +859,11 @@ internal partial class ChartSvgRenderer
 
             // Track waterfall connector positions for drawing connecting lines
             var wfPrevTopY = double.NaN;
+            double wfRunning = 0;
 
             for (int c = 0; c < catCount; c++)
             {
-                // Waterfall keeps a single signed running total; regular stacked
-                // tracks positive and negative cursors separately so mixed-sign
-                // segments stack outward from the zero baseline (positives up,
-                // negatives down) and never produce an inverted/clipped rect.
-                double stackY = 0;       // waterfall cumulative
+                // Excel stacks positive and negative segments separately.
                 double posCursor = 0;    // stacked: accumulated positive value
                 double negCursor = 0;    // stacked: accumulated negative value (<= 0)
                 var catSum = percentStacked ? series.Sum(s => c < s.values.Length ? s.values[c] : 0) : 1;
@@ -874,24 +871,11 @@ internal partial class ChartSvgRenderer
                 {
                     var rawVal = c < series[s].values.Length ? series[s].values[c] : 0;
                     var val = percentStacked && catSum > 0 ? (rawVal / catSum) * 100 : rawVal;
-                    var barH = (val / niceMax) * ph;
                     if (stacked)
                     {
                         var bx = ox + c * groupW + gap;
                         if (isWaterfall)
                         {
-                            // (waterfall: niceMin==0, span==niceMax — unchanged)
-                            var by = oy + ph - (stackY / niceMax) * ph - barH;
-                            if (s > 0)
-                            {
-                                if (barH > 0.5)
-                                    sb.AppendLine($"        <rect x=\"{bx:0.#}\" y=\"{by:0.#}\" width=\"{barW:0.#}\" height=\"{barH:0.#}\" fill=\"{BarFill(s, c)}\" opacity=\"{FillOpacity(s)}\"/>");
-                                if (showDataLabels && !LabelDeleted(s, c) && barH > DataLabelFontPx + 2)
-                                {
-                                    var vlabel = LabelText(s, c, rawVal, rawVal);
-                                    sb.AppendLine($"        <text class=\"chart-data-label\" x=\"{bx + barW / 2:0.#}\" y=\"{by + barH / 2:0.#}\" fill=\"{DataLabelFill}\" font-size=\"{DataLabelFontPx}\"{DataLabelStyleAttr} text-anchor=\"middle\" dominant-baseline=\"middle\">{vlabel}</text>");
-                                }
-                            }
                             // Waterfall connector line — a short HORIZONTAL
                             // segment at the previous bar's cumulative top,
                             // spanning the right edge of bar N to the left edge
@@ -903,9 +887,7 @@ internal partial class ChartSvgRenderer
                                 var prevBx = ox + (c - 1) * groupW + gap + barW;
                                 sb.AppendLine($"        <line x1=\"{prevBx:0.#}\" y1=\"{wfPrevTopY:0.#}\" x2=\"{bx:0.#}\" y2=\"{wfPrevTopY:0.#}\" stroke=\"{GridColor}\" stroke-width=\"1\" stroke-dasharray=\"3,2\"/>");
                             }
-                            stackY += val;
                         }
-                        else
                         {
                             // Map value-axis coordinates through span/zeroFrac so the
                             // domain can include negatives. Positive segment grows up
@@ -926,9 +908,9 @@ internal partial class ChartSvgRenderer
                                 by = isReversed ? ValToY(negCursor + val) : ValToY(negCursor);
                                 negCursor += val;
                             }
-                            if (segH > 0.5)
+                            if (segH > 0.5 && (!isWaterfall || s > 0))
                                 sb.AppendLine($"        <rect x=\"{bx:0.#}\" y=\"{by:0.#}\" width=\"{barW:0.#}\" height=\"{segH:0.#}\" fill=\"{BarFill(s, c)}\" opacity=\"{FillOpacity(s)}\"/>");
-                            if (showDataLabels && !LabelDeleted(s, c) && segH > DataLabelFontPx + 2)
+                            if (showDataLabels && !LabelDeleted(s, c) && segH > DataLabelFontPx + 2 && (!isWaterfall || s > 0))
                             {
                                 var vlabel = LabelText(s, c, rawVal, val);
                                 sb.AppendLine($"        <text class=\"chart-data-label\" x=\"{bx + barW / 2:0.#}\" y=\"{by + segH / 2:0.#}\" fill=\"{DataLabelFill}\" font-size=\"{DataLabelFontPx}\"{DataLabelStyleAttr} text-anchor=\"middle\" dominant-baseline=\"middle\">{vlabel}</text>");
@@ -985,7 +967,11 @@ internal partial class ChartSvgRenderer
                 }
                 // Track waterfall top position for connector line
                 if (isWaterfall)
-                    wfPrevTopY = oy + ph - (stackY / niceMax) * ph;
+                {
+                    double ValueAt(int index) => index < serCount && c < series[index].values.Length ? series[index].values[c] : 0;
+                    wfRunning += ValueAt(1) - ValueAt(2) - ValueAt(3) + ValueAt(4);
+                    wfPrevTopY = ValToY(wfRunning);
+                }
             }
             // Error bars on vertical (column) bar charts
             if (errorBars != null && !stacked)

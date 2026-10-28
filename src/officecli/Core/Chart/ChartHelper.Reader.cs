@@ -1776,7 +1776,7 @@ internal static partial class ChartHelper
             var prefix = dir == C.BarDirectionValues.Bar ? "bar" : "column";
             if (grp == "stacked")
             {
-                // Detect waterfall chart: stacked bar with 3 series where first is "Base" with NoFill
+                // Detect the waterfall base and its visible segments.
                 if (IsWaterfallPattern(bar))
                     return "waterfall";
                 return $"{prefix}_stacked";
@@ -1930,13 +1930,13 @@ internal static partial class ChartHelper
     }
 
     /// <summary>
-    /// Detect waterfall chart pattern: a stacked bar chart with exactly 3 series
+    /// Detect waterfall chart pattern: a stacked bar chart with 3 or 5 series
     /// where the first series is named "Base" and has NoFill (invisible base).
     /// </summary>
     private static bool IsWaterfallPattern(C.BarChart bar)
     {
         var series = bar.Elements<C.BarChartSeries>().ToList();
-        if (series.Count != 3) return false;
+        if (series.Count is not (3 or 5)) return false;
 
         // First series should be "Base" with NoFill
         var firstSerName = series[0].GetFirstChild<C.SeriesText>()

@@ -356,8 +356,8 @@ internal static partial class ChartHelper
 
     /// <summary>
     /// Build a waterfall chart using stacked bar technique:
-    /// - Invisible "base" series for the running total
-    /// - Visible "increase" series (positive changes) and "decrease" series (negative changes)
+    /// - Invisible "base" series for the endpoint nearest zero
+    /// - Increase and decrease series, split at zero when necessary
     /// - Last bar shows the total
     ///
     /// Input: categories and a single series of change values.
@@ -381,34 +381,35 @@ internal static partial class ChartHelper
         var baseVals = new double[n];
         var incVals = new double[n];
         var decVals = new double[n];
+        var incNegativeVals = new double[n];
+        var decNegativeVals = new double[n];
+        var hasTotal = properties.GetValueOrDefault("waterfallTotal", "true")
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
 
         double running = 0;
         for (int i = 0; i < n; i++)
         {
             var v = values[i];
-            if (i == n - 1 && properties.GetValueOrDefault("waterfallTotal", "true")
-                .Equals("true", StringComparison.OrdinalIgnoreCase))
+            bool isTotal = i == n - 1 && hasTotal;
+            var start = isTotal ? 0 : running;
+            var end = isTotal ? running : running + v;
+            var low = Math.Min(start, end);
+            var high = Math.Max(start, end);
+            // Excel stacks positive and negative values separately. Split at zero.
+            baseVals[i] = low >= 0 ? low : high <= 0 ? high : 0;
+            var positive = Math.Max(0, high) - Math.Max(0, low);
+            var negative = Math.Min(0, low) - Math.Min(0, high);
+            if (isTotal || v >= 0)
             {
-                // Last bar = total (starts from 0, shows cumulative running total)
-                // The user's value for the last point is ignored — the total is computed automatically.
-                baseVals[i] = 0;
-                incVals[i] = running;
-                decVals[i] = 0;
-            }
-            else if (v >= 0)
-            {
-                baseVals[i] = running;
-                incVals[i] = v;
-                decVals[i] = 0;
-                running += v;
+                incVals[i] = positive;
+                incNegativeVals[i] = negative;
             }
             else
             {
-                baseVals[i] = running + v; // base drops by |v|
-                incVals[i] = 0;
-                decVals[i] = -v;
-                running += v;
+                decVals[i] = positive;
+                decNegativeVals[i] = negative;
             }
+            if (!isTotal) running = end;
         }
 
         categories ??= Enumerable.Range(1, n).Select(i => i.ToString()).ToArray();
@@ -439,11 +440,18 @@ internal static partial class ChartHelper
         baseSer.InsertAfter(baseSpPr, baseSer.GetFirstChild<C.SeriesText>());
         barChart.AppendChild(baseSer);
 
-        // Series 1: increase (positive values)
+        // Series 1: increase above zero
         barChart.AppendChild(BuildBarSeries(1, "Increase", categories, incVals, increaseColor));
 
-        // Series 2: decrease (negative values)
+        // Series 2: decrease above zero
         barChart.AppendChild(BuildBarSeries(2, "Decrease", categories, decVals, decreaseColor));
+
+        bool hasNegativeSegments = incNegativeVals.Any(v => v != 0) || decNegativeVals.Any(v => v != 0);
+        if (hasNegativeSegments)
+        {
+            barChart.AppendChild(BuildBarSeries(3, "Increase below zero", categories, incNegativeVals, increaseColor));
+            barChart.AppendChild(BuildBarSeries(4, "Decrease below zero", categories, decNegativeVals, decreaseColor));
+        }
 
         barChart.AppendChild(new C.GapWidth { Val = 80 });
         barChart.AppendChild(new C.Overlap { Val = 100 });
@@ -456,36 +464,20 @@ internal static partial class ChartHelper
 
         chart.AppendChild(plotArea);
 
-        // Hide base series from legend
-        var legend = new C.Legend(
-            new C.LegendPosition { Val = C.LegendPositionValues.Bottom },
-            new C.Overlay { Val = false }
-        );
-        // Delete legend entry for base series (index 0)
-        // CT_Legend schema order: legendPos, legendEntry+, layout, overlay — insert after legendPos
-        var leBase = new C.LegendEntry();
-        leBase.AppendChild(new C.Index { Val = 0 });
-        leBase.AppendChild(new C.Delete { Val = true });
-        var legendPosEl = legend.GetFirstChild<C.LegendPosition>();
-        if (legendPosEl != null)
-            legendPosEl.InsertAfterSelf(leBase);
-        else
-            legend.PrependChild(leBase);
-        chart.AppendChild(legend);
-
         chart.AppendChild(new C.PlotVisibleOnly { Val = true });
         chart.AppendChild(new C.DisplayBlanksAs { Val = C.DisplayBlanksAsValues.Gap });
 
         chartSpace.AppendChild(chart);
 
         // Color the total bar differently (last data point of increase series)
-        if (properties.GetValueOrDefault("waterfallTotal", "true")
-            .Equals("true", StringComparison.OrdinalIgnoreCase) && n > 0)
+        if (hasTotal && n > 0)
         {
             var allSer = plotArea.Descendants<OpenXmlCompositeElement>()
                 .Where(e => e.LocalName == "ser").ToList();
             if (allSer.Count >= 2)
                 ApplyDataPointColor(allSer[1], n - 1, totalColor);
+            if (hasNegativeSegments)
+                ApplyDataPointColor(allSer[3], n - 1, totalColor);
         }
 
         return chartSpace;

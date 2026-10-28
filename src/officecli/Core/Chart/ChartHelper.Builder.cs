@@ -315,17 +315,24 @@ internal static partial class ChartHelper
                 var totColor = properties.GetValueOrDefault("totalColor");
                 var wfChartSpace = BuildWaterfallChart(title, wfCategories, wfValues,
                     incColor, decColor, totColor, properties);
-                // BuildWaterfallChart builds its own chart with a default
-                // legend and never consumed the `legend` prop, so legend= was
-                // reported unsupported on a waterfall Add (every other type
-                // accepts it). Drop the default legend and re-apply from the
-                // prop (position, or none) — remove-first avoids a duplicate
-                // <c:legend> that would make Excel refuse the file.
                 var wfChart = wfChartSpace.GetFirstChild<C.Chart>();
                 if (wfChart != null)
                 {
-                    wfChart.RemoveAllChildren<C.Legend>();
                     ApplyLegendFromProps(wfChart, properties);
+                    var wfLegend = wfChart.GetFirstChild<C.Legend>();
+                    if (wfLegend != null)
+                    {
+                        // Hide the base and the duplicate entries for segments below zero.
+                        var hiddenIndices = wfChart.Descendants<C.BarChartSeries>().Count() == 5
+                            ? new uint[] { 0, 3, 4 } : new uint[] { 0 };
+                        foreach (var hiddenIndex in hiddenIndices)
+                        {
+                            var entry = new C.LegendEntry(new C.Index { Val = hiddenIndex }, new C.Delete { Val = true });
+                            var legendPosition = wfLegend.GetFirstChild<C.LegendPosition>();
+                            if (legendPosition != null) legendPosition.InsertAfterSelf(entry);
+                            else wfLegend.PrependChild(entry);
+                        }
+                    }
                 }
                 return wfChartSpace;
             }

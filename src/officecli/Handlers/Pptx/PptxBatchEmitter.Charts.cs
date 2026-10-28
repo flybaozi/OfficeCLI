@@ -83,14 +83,7 @@ public static partial class PptxBatchEmitter
             }
         }
 
-        // Waterfall round-trip: BuildWaterfallChart encodes the user's delta
-        // input into 3 stacked-bar series (Base/Increase/Decrease) with
-        // cumulative values. Re-feeding those 3 series on replay doubles the
-        // running total — Builder would re-encode the already-encoded data.
-        // Reverse the encoding here: each category's delta is `inc[i]` if
-        // inc[i] != 0 else `-dec[i]`; emit a single series under the chart's
-        // own name (or "Series 1") so AddChart's waterfall path takes over.
-        // Per-category names are recovered from `categories=`.
+        // Recover changes from the stored waterfall segments before replay.
         if (props.TryGetValue("chartType", out var ctype)
             && ctype.Equals("waterfall", StringComparison.OrdinalIgnoreCase)
             && fullChart.Children != null)
@@ -116,15 +109,19 @@ public static partial class PptxBatchEmitter
                 && inc.Length == dec.Length
                 && inc.Length > 0)
             {
+                byName.TryGetValue("Increase below zero", out var incNegative);
+                byName.TryGetValue("Decrease below zero", out var decNegative);
                 var deltas = new double[inc.Length];
                 for (int i = 0; i < inc.Length; i++)
-                    deltas[i] = inc[i] != 0 ? inc[i] : -dec[i];
+                    deltas[i] = inc[i] - dec[i]
+                        - (incNegative != null && i < incNegative.Length ? incNegative[i] : 0)
+                        + (decNegative != null && i < decNegative.Length ? decNegative[i] : 0);
                 var deltaStr = string.Join(",",
                     deltas.Select(d => d.ToString("G",
                         System.Globalization.CultureInfo.InvariantCulture)));
                 seriesParts = new List<string> { $"Waterfall:{deltaStr}" };
                 // Strip per-series color/style props that referred to the
-                // encoded triplet — Builder re-applies increase/decrease/
+                // encoded segments — Builder re-applies increase/decrease/
                 // total colors from explicit chart-level keys.
             }
         }
