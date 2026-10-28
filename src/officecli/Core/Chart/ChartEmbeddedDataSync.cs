@@ -38,7 +38,29 @@ public static class ChartEmbeddedDataSync
         internal int SeriesCount;
     }
 
-    private static readonly string[] Kinds = { "tx", "cat", "val", "xVal", "yVal" };
+    private static readonly string[] Kinds = { "tx", "cat", "val", "xVal", "yVal", "bubbleSize" };
+
+    public static void Initialize(ChartPart chartPart)
+    {
+        if (FindEmbeddedWorkbook(chartPart) != null) return;
+        var series = AllSeries(chartPart);
+        var snap = new Snapshot { SeriesCount = series.Count };
+        int column = 1;
+        for (int i = 0; i < series.Count; i++)
+            foreach (var kind in Kinds)
+                if (Slot(series[i], kind) is { } slot
+                    && ReadLiteral(slot, kind).Values is { Count: > 0 })
+                    snap.Formulas[(i, kind)] = $"Sheet1!${ColName(column++)}$1";
+
+        var embedded = chartPart.AddNewPart<EmbeddedPackagePart>(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        using (var stream = new MemoryStream(ChartExResources.BuildMinimalEmbeddedXlsx(null, new())))
+            embedded.FeedData(stream);
+        chartPart.ChartSpace!.AddChild(new C.ExternalData(new C.AutoUpdate { Val = false })
+            { Id = chartPart.GetIdOfPart(embedded) }, true);
+        chartPart.ChartSpace.Save();
+        Restore(chartPart, snap);
+    }
 
     public static Snapshot? Capture(ChartPart chartPart)
     {

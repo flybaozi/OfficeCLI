@@ -819,6 +819,8 @@ public partial class PowerPointHandler
                         trackChart.MarkUnsupported(deferredUnsupported);
                 }
 
+                ChartEmbeddedDataSync.Initialize(chartPart);
+
                 var chartGf = BuildChartGraphicFrame(chartSlidePart, chartPart, chartId, chartName,
                     chartX, chartY, chartCx, chartCy);
                 InsertAtPosition(chartInsertContainer, chartGf, index);
