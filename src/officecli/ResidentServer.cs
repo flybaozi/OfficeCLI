@@ -1781,9 +1781,10 @@ public class ResidentServer : IDisposable
                 try { File.Delete(tmpHtml); } catch { /* ignore */ }
                 if (!rs.Ok)
                 {
-                    Console.Error.WriteLine("No headless browser available. Install Chrome/Edge/Chromium or Firefox, or `pip install playwright && playwright install chromium`."
-                        + (rs.Error != null ? $" Last error: {rs.Error}" : ""));
-                    return;
+                    throw new OfficeCli.Core.CliException(
+                        "No headless browser available. Install Chrome/Edge/Chromium or Firefox, or `pip install playwright && playwright install chromium`."
+                        + (rs.Error != null ? $" Last error: {rs.Error}" : ""))
+                    { Code = "no_screenshot_backend" };
                 }
             }
             Console.WriteLine(Path.GetFullPath(pngPath));
